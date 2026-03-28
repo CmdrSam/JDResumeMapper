@@ -1,0 +1,9 @@
+* Around 9+ years of experience in testing with 6+ years of exp in API automation (Rest Assured).
+* Must have worked on testing Microservices (APIs) - Design and implement testing strategies for microservices-based architecture. Developed integration and contract testing frameworks to ensure compatibility between microservice
+* Programming language Java and Selenium.
+* Must have experience in CICD pipeline
+* Excellent communication
+* Self managing and self-starter
+ 
+QA Lead (Test Lead) (Minimum 14+ years of experience in Testing with that 4+ years as Test Lead)
+Mandatory Skills- Functional Testing as well as Rest Assured Framework, Slenium with Java, Microservices testing and CICD

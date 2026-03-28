@@ -1,0 +1,15 @@
+We are planning a walk-in drive for our critical API Automation Testing requirements for IBM end client ANZ . We have 8 open positions for API Automation Test Engineers and 4 positions for QA Leads (Test Leads).
+ 
+API Automation Test Engineers-  Minimum 8 years of testing experience in that 6+ years in API Automation testing, Rate- 1600\hr
+A Lead (Test Lead) (Minimum 14+ years of experience in Testing with that 4+ years as Test Lead)- 2000\hr
+Walk-in Location- IBM EGL Domlur Block A  Bangalore
+Walk in Date-  12th March 26
+Cut off time - 11th March 2026 at 1:00 PM
+ 
+Interview Time- (interview will start from 1 PM to 4PM)
+ 
+ 
+Note- Work location for Manyatha Tech park   Bangalore and Shift timing will be 7:30AM to 4PM
+API Automation Tester (Minimum 8 years of testing experience in that 6+ years in API Automation testing)
+
+Mandatory skills- Rest Assured Framework, Selenium with Java, Microservices testing and CICD

@@ -1,0 +1,18 @@
+Jane Doe
+jane.doe@email.com | +1-555-0100 | San Francisco, CA
+
+SUMMARY
+Python developer with 6 years building backend services and APIs.
+
+SKILLS
+Python, Django, PostgreSQL, AWS, Docker, Git, REST APIs
+
+EXPERIENCE
+Acme Corp — Senior Software Engineer | 2020 – Present
+Built customer-facing APIs with Django and deployed on AWS (ECS, RDS).
+
+Beta LLC — Software Engineer | 2018 – 2020
+Python microservices and PostgreSQL data modeling.
+
+EDUCATION
+B.S. Computer Science, State University, 2018

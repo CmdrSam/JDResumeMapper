@@ -1,0 +1,10 @@
+Senior Python Engineer
+
+We need strong Python (5+ years), experience with Django or FastAPI, PostgreSQL, and AWS.
+Nice to have: Kubernetes, CI/CD, and good communication skills.
+
+Some cloud expertise is also needed.
+
+Responsibilities:
+- Design and build REST APIs
+- Collaborate with product and frontend teams
