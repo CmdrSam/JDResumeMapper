@@ -40,3 +40,10 @@ Return a single JSON object only (no markdown), with this exact shape:
 
 def candidate_profile_json(candidate: dict[str, Any]) -> str:
     return json.dumps(candidate, ensure_ascii=False, indent=2)
+
+
+def format_candidate_skills_column(candidate: dict[str, Any]) -> str:
+    skills = candidate.get("skills") or []
+    if isinstance(skills, list) and skills:
+        return "; ".join(str(s).strip() for s in skills if str(s).strip())
+    return ""

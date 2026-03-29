@@ -9,13 +9,13 @@ import argparse
 import json
 from pathlib import Path
 
-from src.extractor.jd_extractor import extract_jd_skills
-from src.extractor.resume_extractor import extract_resume_with_llm
+from src.extractor.jd_extractor import extract_jd_skills_bulk
 from src.llm.client import get_llm_client
-from src.matcher.match_engine import composite_score, match_candidate_to_jd
+from src.matcher.match_engine import build_candidate_jd_summary_row, match_candidate_to_jd
 from src.parser.jd_parser import load_jd
-from src.parser.resume_parser import extract_text_from_resume
-from src.utils.table import create_table
+from src.pipeline.resume_cache import build_resume_candidate_map
+from src.resume_enriched.publish import export_recruiter_summary_pdfs
+from src.utils.table import write_candidate_jd_summary
 
 
 def _default_globs(folder: Path, patterns: tuple[str, ...]) -> list[Path]:
@@ -30,47 +30,49 @@ def run_pipeline(
     jd_files: list[str | Path],
     llm,
     output_dir: str | Path | None = None,
-) -> list[dict]:
+) -> tuple[list[dict], dict[str, dict]]:
+    """Returns (summary rows per candidate vs the single JD, candidate map keyed by ``str(resume_path.resolve())``)."""
     output_dir = output_dir or Path(__file__).resolve().parent / "outputs"
-    results: list[dict] = []
+    summary_rows: list[dict] = []
 
-    for jd_file in jd_files:
-        jd_path = Path(jd_file)
-        jd_text = load_jd(jd_path)
-        jd_skills = extract_jd_skills(llm, jd_text)
+    jd_paths = [Path(jf) for jf in jd_files][:1]
+    jd_bundle = [(p, f"{i}::{p.name}", load_jd(p)) for i, p in enumerate(jd_paths)]
+    jd_skills_by_id = extract_jd_skills_bulk(llm, [(bid, text) for _, bid, text in jd_bundle])
+
+    resume_paths = [Path(rf).resolve() for rf in resume_files]
+    candidate_by_resume = build_resume_candidate_map(llm, resume_paths)
+
+    for jd_path, _bulk_id, jd_text in jd_bundle:
+        jd_skills = jd_skills_by_id[_bulk_id]
+        jd_file_name = jd_path.name
+        jd_label = jd_path.stem
 
         for resume_file in resume_files:
-            rpath = Path(resume_file)
-            text = extract_text_from_resume(rpath)
-            candidate = extract_resume_with_llm(llm, text)
+            rpath = Path(resume_file).resolve()
+            candidate = candidate_by_resume[str(rpath)]
             match_rows = match_candidate_to_jd(llm, candidate, jd_text, jd_skills)
-            cand_name = candidate.get("name") or rpath.stem
-            jd_name = jd_path.stem
-            create_table(match_rows, cand_name, jd_name, output_dir)
-            scores = composite_score(match_rows)
-            results.append(
-                {
-                    "candidate_file": str(rpath),
-                    "jd_file": str(jd_path),
-                    "candidate_name": cand_name,
-                    "match_rows": match_rows,
-                    "composite_score": scores,
-                }
+            row = build_candidate_jd_summary_row(
+                llm,
+                jd_label=jd_label,
+                jd_file_name=jd_file_name,
+                jd_text=jd_text,
+                jd_skills=jd_skills,
+                resume_file_name=rpath.name,
+                candidate=candidate,
+                match_rows=match_rows,
             )
+            summary_rows.append(row)
 
-    summary_path = Path(output_dir) / "pipeline_summary.json"
-    serializable = [
-        {
-            "candidate_file": r["candidate_file"],
-            "jd_file": r["jd_file"],
-            "candidate_name": r["candidate_name"],
-            "composite_score": r["composite_score"],
-            "match_rows": r["match_rows"],
-        }
-        for r in results
-    ]
-    summary_path.write_text(json.dumps(serializable, indent=2, ensure_ascii=False), encoding="utf-8")
-    return results
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    write_candidate_jd_summary(summary_rows, out)
+
+    summary_path = out / "pipeline_summary.json"
+    summary_path.write_text(
+        json.dumps(summary_rows, indent=2, ensure_ascii=False, default=str),
+        encoding="utf-8",
+    )
+    return summary_rows, candidate_by_resume
 
 
 def main() -> None:
@@ -86,7 +88,7 @@ def main() -> None:
         "--jds",
         nargs="*",
         default=[],
-        help="JD file paths (txt/docx). Default: all under data/jds/",
+        help="JD file path(s); only the first is used if multiple are given. Default: data/jds/",
     )
     parser.add_argument(
         "--output",
@@ -110,10 +112,25 @@ def main() -> None:
     if not resumes:
         raise SystemExit("No resume files found. Add files to data/resumes/ or pass --resumes paths.")
 
+    if len(jds) > 1:
+        print(
+            f"Note: only one job description is supported; using {jds[0].name!r} "
+            f"and ignoring {len(jds) - 1} other file(s)."
+        )
+        jds = [jds[0]]
+
     llm = get_llm_client()
-    results = run_pipeline(resumes, jds, llm, output_dir=args.output)
+    results, candidate_by_resume = run_pipeline(resumes, jds, llm, output_dir=args.output)
     for r in results:
-        print(f"{r['candidate_name']} vs {Path(r['jd_file']).name}: final score ~ {r['composite_score']['final']}")
+        print(
+            f"{r['Candidate']} vs {r['JD file']}: "
+            f"resume {r['Resume score']}% | profile {r['Profile score']}%"
+        )
+    out = Path(args.output).resolve()
+    resume_targets = [(p.resolve(), p.name) for p in resumes]
+    written = export_recruiter_summary_pdfs(results, resume_targets, candidate_by_resume, out_root=out)
+    for w in written:
+        print(f"Recruiter PDF: {w}")
 
 
 if __name__ == "__main__":
