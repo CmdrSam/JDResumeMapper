@@ -224,6 +224,52 @@ def _score_cell(score: int) -> str:
     return f"{n}/5"
 
 
+def _is_essential_requirement(req: str) -> bool:
+    t = str(req or "").strip().lower()
+    if not t:
+        return False
+    essential_markers = (
+        "required",
+        "must",
+        "mandatory",
+        "essential",
+        "critical",
+        "core",
+        "key requirement",
+        "minimum",
+        "strong",
+        "expected",
+        "10+ years",
+        "5+ years",
+    )
+    return any(m in t for m in essential_markers)
+
+
+def _sort_dimension_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Sort rows for recruiter readability:
+    1) Essential JD requirements first
+    2) Higher score first
+    3) Stable tie-break on skill_area
+    """
+    safe_rows = [r for r in rows if isinstance(r, dict)]
+
+    def _score(r: dict[str, Any]) -> int:
+        try:
+            return max(0, min(5, int(r.get("score_out_of_5", 0))))
+        except (TypeError, ValueError):
+            return 0
+
+    return sorted(
+        safe_rows,
+        key=lambda r: (
+            0 if _is_essential_requirement(str(r.get("jd_requirement", "") or "")) else 1,
+            -_score(r),
+            str(r.get("skill_area", "") or "").lower(),
+        ),
+    )
+
+
 def _summary_body_flowables(text: str, body_style: ParagraphStyle) -> list[Any]:
     parts = [p.strip() for p in str(text).split("\n\n") if p.strip()]
     if not parts:
@@ -298,17 +344,7 @@ def _build_cover_pdf_bytes(
     story.append(Paragraph("Recruiter Summary", title_style))
     story.append(HRFlowable(width="100%", thickness=0.75, color=brand, spaceAfter=12, spaceBefore=2))
 
-    contact_bits = ", ".join(
-        x.split(": ", 1)[-1]
-        for x in _contact_block(candidate)
-        if ":" in x and x.split(": ", 1)[-1].strip()
-    )
-    if contact_bits:
-        # Do not pass <b> through _para_html — it escapes angle brackets and breaks markup.
-        story.append(Paragraph(f"<b>Contact:</b> {_para_html(contact_bits)}", body))
-        story.append(Spacer(1, 0.08 * inch))
-
-    story.append(Paragraph("Candidate Highlights:", section))
+    story.append(Paragraph("Candidate highlight As per Current Job Description", section))
     story.append(Spacer(1, 0.05 * inch))
     story.extend(_summary_body_flowables(page.get("candidate_summary") or "", body))
 
@@ -342,7 +378,7 @@ def _build_cover_pdf_bytes(
     table_data: list[list[Any]] = [
         [Paragraph(f"<b>{h.replace('&', '&amp;')}</b>", small) for h in headers]
     ]
-    dims = page.get("dimension_rows") or []
+    dims = _sort_dimension_rows(page.get("dimension_rows") or [])
     if not dims:
         table_data.append([Paragraph(_para_html("—"), small) for _ in headers])
     else:
