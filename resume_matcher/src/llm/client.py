@@ -9,8 +9,9 @@ DEFAULT_BASE_URL = "https://api.deepseek.com/v1"
 
 
 def _load_env() -> None:
+    """Load `.env` from nearest ancestor (repo root, etc.). Safe for shallow paths e.g. Docker `/app/...`."""
     here = Path(__file__).resolve()
-    for parent in [here.parents[i] for i in range(2, 6)]:
+    for parent in here.parents:
         env = parent / ".env"
         if env.is_file():
             load_dotenv(env)
