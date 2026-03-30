@@ -108,6 +108,19 @@ jd_file = st.file_uploader(
     type=["txt", "md", "docx"],
     accept_multiple_files=False,
 )
+jd_input_mode = st.radio(
+    "JD input mode",
+    options=["Upload JD file", "Paste JD text"],
+    horizontal=True,
+    index=0,
+)
+jd_text_input = ""
+if jd_input_mode == "Paste JD text":
+    jd_text_input = st.text_area(
+        "Paste job description text",
+        placeholder="Paste the full job description here...",
+        height=220,
+    )
 resume_files = st.file_uploader("Resumes (.pdf, .docx, .txt)", type=["pdf", "docx", "txt"], accept_multiple_files=True)
 
 run_clicked = st.button(
@@ -117,8 +130,11 @@ run_clicked = st.button(
     disabled=bool(st.session_state.get("_run_in_progress", False)),
 )
 if run_clicked:
-    if not jd_file or not resume_files:
-        st.warning("Upload one job description and at least one resume.")
+    missing_jd = (jd_input_mode == "Upload JD file" and not jd_file) or (
+        jd_input_mode == "Paste JD text" and not jd_text_input.strip()
+    )
+    if missing_jd or not resume_files:
+        st.warning("Provide one JD (upload or paste) and at least one resume.")
     else:
         if not _RUN_SEMAPHORE.acquire(blocking=False):
             st.warning(
@@ -136,14 +152,19 @@ if run_clicked:
                 with tempfile.TemporaryDirectory() as tmp:
                     tdir = Path(tmp)
 
-                    jd_path = tdir / jd_file.name
-                    jd_path.write_bytes(jd_file.getvalue())
-                    jd_text = load_jd(jd_path)
+                    if jd_input_mode == "Upload JD file":
+                        jd_path = tdir / jd_file.name
+                        jd_path.write_bytes(jd_file.getvalue())
+                        jd_text = load_jd(jd_path)
+                        jd_label = Path(jd_file.name).stem
+                        orig_jd_name = jd_file.name
+                    else:
+                        jd_text = jd_text_input.strip()
+                        jd_label = "Pasted JD"
+                        orig_jd_name = "pasted_jd.txt"
+
                     with st.spinner("Extracting JD skills…"):
                         jd_skills = extract_jd_skills(llm, jd_text)
-
-                    jd_label = Path(jd_file.name).stem
-                    orig_jd_name = jd_file.name
 
                     content_hash_to_candidate: dict[str, dict] = {}
                     resume_order: list[tuple[Path, str, str]] = []
