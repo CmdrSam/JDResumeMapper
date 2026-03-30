@@ -3,6 +3,7 @@ __pycache__/
 *.py[codz]
 *$py.class
 resume_matcher/outputs/
+resume_matcher/data/
 
 # C extensions
 *.so
