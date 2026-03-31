@@ -179,6 +179,19 @@ items.forEach((item, i) => {{
     return len(items), skipped
 
 
+def _normalize_job_status(raw_status: Any) -> str:
+    """Normalize RQ status to queued/started/finished/failed string."""
+    if hasattr(raw_status, "value"):
+        try:
+            return str(raw_status.value).strip().lower()
+        except Exception:
+            pass
+    s = str(raw_status or "").strip().lower()
+    if "." in s:
+        s = s.rsplit(".", 1)[-1]
+    return s
+
+
 def _render_last_run(last: dict[str, Any]) -> None:
     summary_rows = last.get("summary_rows", [])
     written_pdf = [Path(p) for p in last.get("written_pdf", [])]
@@ -334,7 +347,7 @@ if active_job_id:
     try:
         conn = get_redis_connection()
         job = Job.fetch(active_job_id, connection=conn)
-        status = str(job.get_status(refresh=True) or "").lower()
+        status = _normalize_job_status(job.get_status(refresh=True))
         if status == "queued":
             st.info("Queued: waiting for a free worker.")
         elif status == "started":
@@ -342,12 +355,22 @@ if active_job_id:
             hb_txt = hb.isoformat() if hb else "n/a"
             st.info(f"Processing: worker picked this job. Last heartbeat: {hb_txt}")
         elif status == "finished":
-            result = job.result or {}
+            raw_result = job.result
+            result = raw_result if isinstance(raw_result, dict) else {}
             err_count = int(result.get("error_count", 0) or 0)
-            run_output_dir = Path(str(result.get("run_output_dir") or st.session_state.get("_active_run_dir")))
+            run_output_dir_raw = result.get("run_output_dir") or st.session_state.get("_active_run_dir")
+            if not run_output_dir_raw:
+                st.error("Job finished but run output directory was not found in session/result.")
+                st.session_state.pop("_active_job_id", None)
+                st.session_state.pop("_active_run_dir", None)
+                st.stop()
+
+            run_output_dir = Path(str(run_output_dir_raw))
             summary_path = Path(str(result.get("json_path") or (run_output_dir / "pipeline_summary.json")))
             csv_path = Path(str(result.get("csv_path") or (run_output_dir / "candidate_vs_jd_summary.csv")))
             written_pdf = [Path(p) for p in (result.get("written_pdf") or [])]
+            if not written_pdf:
+                written_pdf = sorted(run_output_dir.glob("*_recruiter_summary.pdf"))
             summary_rows: list[dict[str, Any]] = []
             if summary_path.is_file():
                 try:
