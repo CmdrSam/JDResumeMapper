@@ -40,6 +40,7 @@ _MAX_RUN_FOLDERS = 120
 _RUN_SEMAPHORE = threading.BoundedSemaphore(_MAX_CONCURRENT_SUBMITS)
 _MAX_AUTO_PDF_BYTES_PER_FILE = 12 * 1024 * 1024
 _MAX_AUTO_PDF_BYTES_TOTAL = 28 * 1024 * 1024
+_STATUS_AUTO_REFRESH_MS = 4000
 
 
 def _get_session_id() -> str:
@@ -179,6 +180,21 @@ items.forEach((item, i) => {{
     return len(items), skipped
 
 
+def _inject_status_autorefresh(ms: int = _STATUS_AUTO_REFRESH_MS) -> None:
+    """Auto-refresh Streamlit page while a job is active."""
+    html = f"""
+<!DOCTYPE html>
+<html><body>
+<script>
+setTimeout(() => {{
+  window.parent.location.reload();
+}}, {int(ms)});
+</script>
+</body></html>
+"""
+    components.html(html, height=0)
+
+
 def _normalize_job_status(raw_status: Any) -> str:
     """Normalize RQ status to queued/started/finished/failed string."""
     if hasattr(raw_status, "value"):
@@ -282,7 +298,8 @@ run_clicked = st.button(
     "Run match",
     type="primary",
     key="run_match",
-    disabled=bool(st.session_state.get("_run_in_progress", False)),
+    disabled=bool(st.session_state.get("_run_in_progress", False))
+    or bool(st.session_state.get("_active_job_id")),
 )
 
 if run_clicked:
@@ -343,17 +360,20 @@ active_job_id = st.session_state.get("_active_job_id")
 if active_job_id:
     st.subheader("Processing status")
     st.caption(f"Active Job ID: `{active_job_id}`")
-    st.button("Refresh status", key="refresh_status")
+    st.caption("Status auto-refresh is on (about every 4 seconds).")
+    st.button("Refresh status now", key="refresh_status")
     try:
         conn = get_redis_connection()
         job = Job.fetch(active_job_id, connection=conn)
         status = _normalize_job_status(job.get_status(refresh=True))
         if status == "queued":
             st.info("Queued: waiting for a free worker.")
+            _inject_status_autorefresh()
         elif status == "started":
             hb = job.last_heartbeat
             hb_txt = hb.isoformat() if hb else "n/a"
             st.info(f"Processing: worker picked this job. Last heartbeat: {hb_txt}")
+            _inject_status_autorefresh()
         elif status == "finished":
             raw_result = job.result
             result = raw_result if isinstance(raw_result, dict) else {}
@@ -398,6 +418,7 @@ if active_job_id:
             st.session_state.pop("_active_run_dir", None)
         else:
             st.info(f"Job status: {status or 'unknown'}")
+            _inject_status_autorefresh()
     except Exception as e:
         st.error(f"Unable to fetch job status: {e}")
 
