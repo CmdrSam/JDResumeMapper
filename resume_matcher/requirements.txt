@@ -12,3 +12,4 @@ requests>=2.31.0
 json-repair>=0.30.0
 redis>=5.0.0
 rq>=1.16.0
+streamlit-autorefresh>=1.0.1

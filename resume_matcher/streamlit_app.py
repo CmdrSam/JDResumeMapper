@@ -19,6 +19,7 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 from rq.job import Job
+from streamlit_autorefresh import st_autorefresh
 
 # Support both local package-style runs and Docker `/app` script runs.
 if __package__ in (None, ""):
@@ -181,18 +182,8 @@ items.forEach((item, i) => {{
 
 
 def _inject_status_autorefresh(ms: int = _STATUS_AUTO_REFRESH_MS) -> None:
-    """Auto-refresh Streamlit page while a job is active."""
-    html = f"""
-<!DOCTYPE html>
-<html><body>
-<script>
-setTimeout(() => {{
-  window.parent.location.reload();
-}}, {int(ms)});
-</script>
-</body></html>
-"""
-    components.html(html, height=0)
+    """Trigger a Streamlit rerun without full-page browser reload."""
+    st_autorefresh(interval=int(ms), key="job_status_autorefresh")
 
 
 def _normalize_job_status(raw_status: Any) -> str:
