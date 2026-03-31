@@ -113,3 +113,42 @@ If a deploy fails:
 1. In Coolify, redeploy the previous working commit/tag
 2. Keep persistent volume mounted at `/app/outputs`
 3. Validate with a quick JD + resume test
+
+## 12) Queue + workers + horizontal scaling (Docker CLI)
+
+This project now supports queue-based processing:
+- Streamlit app is frontend-only (submit/poll)
+- Redis stores queue/job state
+- RQ workers process match jobs
+
+Use `docker-compose.yml` in `resume_matcher/`.
+
+Create/update `.env`:
+
+```bash
+DEEPSEEK_API_KEY=your_key_here
+DEEPSEEK_MODEL=deepseek-chat
+REDIS_URL=redis://redis:6379/0
+```
+
+Start stack:
+
+```bash
+docker compose up -d --build
+```
+
+Scale workers horizontally (example: 6 workers):
+
+```bash
+docker compose up -d --scale worker=6
+```
+
+Check services:
+
+```bash
+docker compose ps
+docker compose logs -f app
+docker compose logs -f worker
+```
+
+The Streamlit app listens on port `8501`.
