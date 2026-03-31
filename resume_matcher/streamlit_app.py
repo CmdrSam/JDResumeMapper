@@ -20,11 +20,16 @@ import streamlit as st
 import streamlit.components.v1 as components
 from rq.job import Job
 
-# Allow running as script (`streamlit run streamlit_app.py`) while using package-absolute imports.
+# Support both local package-style runs and Docker `/app` script runs.
 if __package__ in (None, ""):
-    sys.path.append(str(Path(__file__).resolve().parent.parent))
+    here = Path(__file__).resolve().parent
+    sys.path.append(str(here))
+    sys.path.append(str(here.parent))
 
-from resume_matcher.src.pipeline.queueing import get_match_queue, get_redis_connection
+try:
+    from resume_matcher.src.pipeline.queueing import get_match_queue, get_redis_connection
+except ModuleNotFoundError:
+    from src.pipeline.queueing import get_match_queue, get_redis_connection
 
 _ROOT = Path(__file__).resolve().parent
 _OUTPUTS_DIR = _ROOT / "outputs"
