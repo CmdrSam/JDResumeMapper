@@ -301,7 +301,7 @@ if run_clicked:
             job = q.enqueue(
                 "src.pipeline.job_runner.process_match_job",
                 payload,
-                job_timeout="2h",
+                job_timeout="60m",
                 result_ttl=24 * 3600,
                 failure_ttl=24 * 3600,
             )
@@ -323,11 +323,14 @@ if active_job_id:
         conn = get_redis_connection()
         job = Job.fetch(active_job_id, connection=conn)
         if job.is_queued:
-            st.info("Queued. Waiting for worker...")
+            st.info("Queued: waiting for a free worker.")
         elif job.is_started:
-            st.info("Processing in worker...")
+            hb = job.last_heartbeat
+            hb_txt = hb.isoformat() if hb else "n/a"
+            st.info(f"Processing: worker picked this job. Last heartbeat: {hb_txt}")
         elif job.is_finished:
             result = job.result or {}
+            err_count = int(result.get("error_count", 0) or 0)
             run_output_dir = Path(str(result.get("run_output_dir") or st.session_state.get("_active_run_dir")))
             summary_path = Path(str(result.get("json_path") or (run_output_dir / "pipeline_summary.json")))
             csv_path = Path(str(result.get("csv_path") or (run_output_dir / "candidate_vs_jd_summary.csv")))
@@ -347,9 +350,12 @@ if active_job_id:
             st.session_state["_pending_pdf_autodownload"] = [str(p) for p in written_pdf if p.is_file()]
             st.session_state.pop("_active_job_id", None)
             st.session_state.pop("_active_run_dir", None)
-            st.success("Processing complete.")
+            if err_count > 0:
+                st.warning(f"Processing complete with {err_count} resume-level error(s).")
+            else:
+                st.success("Processing complete.")
         elif job.is_failed:
-            st.error("Job failed in worker. Check worker logs.")
+            st.error("Failed: worker reported an error.")
             if job.exc_info:
                 st.code(str(job.exc_info))
             st.session_state.pop("_active_job_id", None)

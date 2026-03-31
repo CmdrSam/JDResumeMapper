@@ -14,6 +14,37 @@ from src.resume_enriched.publish import export_recruiter_summary_pdfs
 from src.utils.table import write_candidate_jd_summary
 
 
+def _error_summary_row(
+    *,
+    jd_label: str,
+    jd_file_name: str,
+    resume_file_name: str,
+    reason: str,
+) -> dict[str, Any]:
+    short_reason = (reason or "Unknown error").strip()[:500]
+    return {
+        "JD": jd_label,
+        "Candidate": Path(resume_file_name).stem,
+        "JD file": jd_file_name,
+        "Resume file": resume_file_name,
+        "Required skills": "",
+        "Candidate skills": "",
+        "Resume score": 0,
+        "Profile score": 0,
+        "Why select": "",
+        "Why not select": f"Processing failed for this resume: {short_reason}",
+        "recruiter_page": {
+            "candidate_summary": "Resume processing failed for this candidate. See failure reason in verdict.",
+            "verdict_lines": [f"Processing failed: {short_reason}"],
+            "overall_match_out_of_5": 0.0,
+            "overall_match_percent_approx": 0,
+            "dimension_rows": [],
+        },
+        "skill_matrix": [],
+        "processing_error": short_reason,
+    }
+
+
 def process_match_job(payload: dict[str, Any]) -> dict[str, Any]:
     """
     Background worker job:
@@ -47,6 +78,7 @@ def process_match_job(payload: dict[str, Any]) -> dict[str, Any]:
     jd_skills = extract_jd_skills(llm, jd_text)
 
     content_hash_to_candidate: dict[str, dict[str, Any]] = {}
+    failed_hash_to_reason: dict[str, str] = {}
     resume_order: list[tuple[Path, str, str]] = []
     for item in resume_items:
         if not isinstance(item, dict):
@@ -57,30 +89,55 @@ def process_match_job(payload: dict[str, Any]) -> dict[str, Any]:
         if not h:
             h = f"nohash::{display_name}"
         resume_order.append((rpath, display_name, h))
-        if h not in content_hash_to_candidate:
-            text = extract_text_from_resume(rpath)
-            content_hash_to_candidate[h] = extract_resume_with_llm(llm, text)
+        if h not in content_hash_to_candidate and h not in failed_hash_to_reason:
+            try:
+                text = extract_text_from_resume(rpath)
+                content_hash_to_candidate[h] = extract_resume_with_llm(llm, text)
+            except Exception as e:
+                failed_hash_to_reason[h] = f"{type(e).__name__}: {e}"
 
     summary_rows: list[dict[str, Any]] = []
     for rpath, display_name, h in resume_order:
-        candidate = content_hash_to_candidate[h]
-        match_rows = match_candidate_to_jd(llm, candidate, jd_text, jd_skills)
-        row = build_candidate_jd_summary_row(
-            llm,
-            jd_label=jd_label,
-            jd_file_name=jd_file_name,
-            jd_text=jd_text,
-            jd_skills=jd_skills,
-            resume_file_name=display_name,
-            candidate=candidate,
-            match_rows=match_rows,
-        )
-        summary_rows.append(row)
+        if h in failed_hash_to_reason:
+            summary_rows.append(
+                _error_summary_row(
+                    jd_label=jd_label,
+                    jd_file_name=jd_file_name,
+                    resume_file_name=display_name,
+                    reason=failed_hash_to_reason[h],
+                )
+            )
+            continue
+        try:
+            candidate = content_hash_to_candidate[h]
+            match_rows = match_candidate_to_jd(llm, candidate, jd_text, jd_skills)
+            row = build_candidate_jd_summary_row(
+                llm,
+                jd_label=jd_label,
+                jd_file_name=jd_file_name,
+                jd_text=jd_text,
+                jd_skills=jd_skills,
+                resume_file_name=display_name,
+                candidate=candidate,
+                match_rows=match_rows,
+            )
+            summary_rows.append(row)
+        except Exception as e:
+            summary_rows.append(
+                _error_summary_row(
+                    jd_label=jd_label,
+                    jd_file_name=jd_file_name,
+                    resume_file_name=display_name,
+                    reason=f"{type(e).__name__}: {e}",
+                )
+            )
 
     candidate_by_resume_key = {
-        str(t[0].resolve()): content_hash_to_candidate[t[2]] for t in resume_order
+        str(t[0].resolve()): content_hash_to_candidate[t[2]]
+        for t in resume_order
+        if t[2] in content_hash_to_candidate
     }
-    resume_targets = [(t[0].resolve(), t[1]) for t in resume_order]
+    resume_targets = [(t[0].resolve(), t[1]) for t in resume_order if t[2] in content_hash_to_candidate]
     written_pdf = export_recruiter_summary_pdfs(
         summary_rows,
         resume_targets,
@@ -102,5 +159,6 @@ def process_match_job(payload: dict[str, Any]) -> dict[str, Any]:
         "json_path": str(summary_path),
         "written_pdf": [str(p) for p in written_pdf],
         "count": len(summary_rows),
+        "error_count": len([r for r in summary_rows if r.get("processing_error")]),
     }
 
