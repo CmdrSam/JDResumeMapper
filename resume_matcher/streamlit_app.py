@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import sys
 import threading
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -19,7 +20,11 @@ import streamlit as st
 import streamlit.components.v1 as components
 from rq.job import Job
 
-from src.pipeline.queueing import get_match_queue, get_redis_connection
+# Allow running as script (`streamlit run streamlit_app.py`) while using package-absolute imports.
+if __package__ in (None, ""):
+    sys.path.append(str(Path(__file__).resolve().parent.parent))
+
+from resume_matcher.src.pipeline.queueing import get_match_queue, get_redis_connection
 
 _ROOT = Path(__file__).resolve().parent
 _OUTPUTS_DIR = _ROOT / "outputs"
@@ -280,6 +285,8 @@ if run_clicked:
 
             payload: dict[str, Any] = {"run_output_dir": str(run_output_dir)}
             if jd_input_mode == "Upload JD file":
+                if jd_file is None:
+                    raise ValueError("JD file is required in upload mode.")
                 jd_dest = inputs_dir / jd_file.name
                 jd_dest.write_bytes(jd_file.getvalue())
                 payload["jd_mode"] = "upload"
