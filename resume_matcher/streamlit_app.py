@@ -334,13 +334,14 @@ if active_job_id:
     try:
         conn = get_redis_connection()
         job = Job.fetch(active_job_id, connection=conn)
-        if job.is_queued:
+        status = str(job.get_status(refresh=True) or "").lower()
+        if status == "queued":
             st.info("Queued: waiting for a free worker.")
-        elif job.is_started:
+        elif status == "started":
             hb = job.last_heartbeat
             hb_txt = hb.isoformat() if hb else "n/a"
             st.info(f"Processing: worker picked this job. Last heartbeat: {hb_txt}")
-        elif job.is_finished:
+        elif status == "finished":
             result = job.result or {}
             err_count = int(result.get("error_count", 0) or 0)
             run_output_dir = Path(str(result.get("run_output_dir") or st.session_state.get("_active_run_dir")))
@@ -366,14 +367,14 @@ if active_job_id:
                 st.warning(f"Processing complete with {err_count} resume-level error(s).")
             else:
                 st.success("Processing complete.")
-        elif job.is_failed:
+        elif status == "failed":
             st.error("Failed: worker reported an error.")
             if job.exc_info:
                 st.code(str(job.exc_info))
             st.session_state.pop("_active_job_id", None)
             st.session_state.pop("_active_run_dir", None)
         else:
-            st.info(f"Job status: {job.get_status()}")
+            st.info(f"Job status: {status or 'unknown'}")
     except Exception as e:
         st.error(f"Unable to fetch job status: {e}")
 
