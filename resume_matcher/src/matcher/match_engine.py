@@ -318,6 +318,8 @@ def _normalize_recruiter_ready_page(
             except (TypeError, ValueError):
                 sc = 0
             sc = max(0, min(5, sc))
+            if sc <= 2:
+                continue
             dim_out.append(
                 {
                     "skill_area": sa,
@@ -344,15 +346,16 @@ def _normalize_recruiter_ready_page(
         ]
     if not dim_out:
         sc = max(0, min(5, int(round(profile_score / 20.0))))
-        dim_out.append(
-            {
-                "skill_area": "Overall fit",
-                "jd_requirement": "Role requirements (see JD)",
-                "resume_evidence": "See candidate profile",
-                "score_out_of_5": sc,
-                "match_summary": "See summary above",
-            }
-        )
+        if sc > 2:
+            dim_out.append(
+                {
+                    "skill_area": "Overall fit",
+                    "jd_requirement": "Role requirements (see JD)",
+                    "resume_evidence": "See candidate profile",
+                    "score_out_of_5": sc,
+                    "match_summary": "See summary above",
+                }
+            )
 
     return {
         "candidate_summary": summary,
@@ -443,6 +446,8 @@ def _skill_matrix_from_recruiter_page(page: dict[str, Any]) -> list[dict[str, An
             continue
         n = int(d.get("score_out_of_5", 0))
         n = max(0, min(5, n))
+        if n <= 2:
+            continue
         out.append(
             {
                 "Skill Area": d.get("skill_area", ""),

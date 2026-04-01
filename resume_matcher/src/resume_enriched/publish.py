@@ -98,7 +98,7 @@ def _cover_later_pages_canvas(canvas: Any, doc: Any) -> None:
     canvas.saveState()
     canvas.setFont("Helvetica-Oblique", 8)
     canvas.setFillColor(colors.HexColor("#6b7280"))
-    canvas.drawCentredString(pw / 2, 0.48 * inch, "Recruiter summary · continuation · confidential")
+    canvas.drawCentredString(pw / 2, 0.48 * inch, "Technical screening report · continuation · confidential")
     canvas.restoreState()
 
 
@@ -139,6 +139,17 @@ def _parse_score_slash5_from_cell(score_cell: str) -> int | None:
     return None
 
 
+def _dimension_row_score_int(d: dict[str, Any]) -> int:
+    try:
+        return max(0, min(5, int(d.get("score_out_of_5", 0))))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _dimension_rows_score_gt2(rows: list[Any]) -> list[dict[str, Any]]:
+    return [r for r in rows if isinstance(r, dict) and _dimension_row_score_int(r) > 2]
+
+
 def _recruiter_page_for_pdf(jd_rows: list[dict[str, Any]]) -> dict[str, Any]:
     """
     Prefer ``recruiter_page`` from the pipeline; otherwise synthesize from legacy row fields + old matrix shape.
@@ -156,7 +167,9 @@ def _recruiter_page_for_pdf(jd_rows: list[dict[str, Any]]) -> dict[str, Any]:
     row = jd_rows[0]
     rp = row.get("recruiter_page")
     if isinstance(rp, dict) and (str(rp.get("candidate_summary") or "").strip() or rp.get("dimension_rows")):
-        return rp
+        rp_out = dict(rp)
+        rp_out["dimension_rows"] = _dimension_rows_score_gt2(rp.get("dimension_rows") or [])
+        return rp_out
 
     profile_s = _parse_score(row.get("Profile score"))
     resume_s = _parse_score(row.get("Resume score"))
@@ -174,25 +187,28 @@ def _recruiter_page_for_pdf(jd_rows: list[dict[str, Any]]) -> dict[str, Any]:
                 n = _parse_score_slash5_from_cell(scell) if scell else None
                 if n is None:
                     n = 3
-                dims.append(
-                    {
-                        "skill_area": str(m.get("Skill Area", "") or ""),
-                        "jd_requirement": str(m.get("JD Requirement", "") or ""),
-                        "resume_evidence": str(m.get("Resume Evidence", "") or ""),
-                        "score_out_of_5": n,
-                        "match_summary": str(m.get("Match Summary", "") or ""),
-                    }
-                )
+                if n > 2:
+                    dims.append(
+                        {
+                            "skill_area": str(m.get("Skill Area", "") or ""),
+                            "jd_requirement": str(m.get("JD Requirement", "") or ""),
+                            "resume_evidence": str(m.get("Resume Evidence", "") or ""),
+                            "score_out_of_5": n,
+                            "match_summary": str(m.get("Match Summary", "") or ""),
+                        }
+                    )
             elif m.get("Skill Category"):
-                dims.append(
-                    {
-                        "skill_area": str(m.get("Skill Category", "") or ""),
-                        "jd_requirement": str(m.get("Required Skills (JD)", "") or ""),
-                        "resume_evidence": str(m.get("Candidate Skills", "") or ""),
-                        "score_out_of_5": _percent_to_star_int(m.get("Match Score (%)", 0)),
-                        "match_summary": str(m.get("Remarks", "") or ""),
-                    }
-                )
+                pct_star = _percent_to_star_int(m.get("Match Score (%)", 0))
+                if pct_star > 2:
+                    dims.append(
+                        {
+                            "skill_area": str(m.get("Skill Category", "") or ""),
+                            "jd_requirement": str(m.get("Required Skills (JD)", "") or ""),
+                            "resume_evidence": str(m.get("Candidate Skills", "") or ""),
+                            "score_out_of_5": pct_star,
+                            "match_summary": str(m.get("Remarks", "") or ""),
+                        }
+                    )
 
     summary = str(row.get("Why select", "") or "").strip() or (
         f"Holistic profile fit about {profile_s:.0f}%; resume keyword coverage about {resume_s:.0f}% vs required JD skills."
@@ -200,15 +216,17 @@ def _recruiter_page_for_pdf(jd_rows: list[dict[str, Any]]) -> dict[str, Any]:
     why_not = str(row.get("Why not select", "") or "").strip()
     verdict = [why_not] if why_not else ["Validate fit in screening using the table below."]
     if not dims:
-        dims.append(
-            {
-                "skill_area": "Overall",
-                "jd_requirement": "See JD file",
-                "resume_evidence": "See resume",
-                "score_out_of_5": max(0, min(5, int(round(profile_s / 20.0)))),
-                "match_summary": "Legacy export — re-run for full dimension table",
-            }
-        )
+        sc_overall = max(0, min(5, int(round(profile_s / 20.0))))
+        if sc_overall > 2:
+            dims.append(
+                {
+                    "skill_area": "Overall",
+                    "jd_requirement": "See JD file",
+                    "resume_evidence": "See resume",
+                    "score_out_of_5": sc_overall,
+                    "match_summary": "Legacy export — re-run for full dimension table",
+                }
+            )
 
     return {
         "candidate_summary": summary,
@@ -341,7 +359,7 @@ def _build_cover_pdf_bytes(
 
     story: list[Any] = []
     story.extend(_logo_header_flowables(_content_width))
-    story.append(Paragraph("Recruiter Summary", title_style))
+    story.append(Paragraph("Technical Screening report", title_style))
     story.append(HRFlowable(width="100%", thickness=0.75, color=brand, spaceAfter=12, spaceBefore=2))
 
     story.append(Paragraph("Candidate highlight As per Current Job Description", section))
@@ -378,7 +396,19 @@ def _build_cover_pdf_bytes(
     table_data: list[list[Any]] = [
         [Paragraph(f"<b>{h.replace('&', '&amp;')}</b>", small) for h in headers]
     ]
-    dims = _sort_dimension_rows(page.get("dimension_rows") or [])
+    dims = _sort_dimension_rows(_dimension_rows_score_gt2(page.get("dimension_rows") or []))
+    if not dims:
+        om_stars = max(0, min(5, int(round(om_f))))
+        if om_stars > 2:
+            dims = [
+                {
+                    "skill_area": "Overall fit",
+                    "jd_requirement": "Role requirements (see JD)",
+                    "resume_evidence": "See candidate profile",
+                    "score_out_of_5": om_stars,
+                    "match_summary": "No individual skill rows scored above 2/5",
+                }
+            ]
     if not dims:
         table_data.append([Paragraph(_para_html("—"), small) for _ in headers])
     else:

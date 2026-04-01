@@ -36,7 +36,7 @@ _ROOT = Path(__file__).resolve().parent
 _OUTPUTS_DIR = _ROOT / "outputs"
 _SESSIONS_DIR = _OUTPUTS_DIR / "sessions"
 _MAX_CONCURRENT_SUBMITS = 20
-_RETENTION_HOURS = 24
+_RETENTION_HOURS = 3
 _MAX_RUN_FOLDERS = 120
 _RUN_SEMAPHORE = threading.BoundedSemaphore(_MAX_CONCURRENT_SUBMITS)
 _MAX_AUTO_PDF_BYTES_PER_FILE = 12 * 1024 * 1024
@@ -105,6 +105,41 @@ def _new_run_output_dir() -> Path:
     return out
 
 
+def _resolve_streamlit_logo() -> Path | None:
+    base = Path(__file__).resolve().parent / "src" / "resources"
+    for name in ("logo.jpeg", "logo.jpg", "logo.png", "logo.JPEG", "logo.JPG", "logo.PNG"):
+        p = base / name
+        if p.is_file():
+            return p
+    return None
+
+
+def _dimension_rows_ui(row: dict[str, Any]) -> list[dict[str, Any]]:
+    """Skill dimension rows with score_out_of_5 > 2 (matches PDF / CSV filtering)."""
+    rp_raw = row.get("recruiter_page")
+    rp = rp_raw if isinstance(rp_raw, dict) else {}
+    out: list[dict[str, Any]] = []
+    for d in rp.get("dimension_rows") or []:
+        if not isinstance(d, dict):
+            continue
+        try:
+            n = max(0, min(5, int(d.get("score_out_of_5", 0))))
+        except (TypeError, ValueError):
+            n = 0
+        if n <= 2:
+            continue
+        out.append(
+            {
+                "Skill Area": str(d.get("skill_area", "") or ""),
+                "JD Requirement": str(d.get("jd_requirement", "") or ""),
+                "Resume Evidence": str(d.get("resume_evidence", "") or ""),
+                "Score": f"{n}/5",
+                "Match Summary": str(d.get("match_summary", "") or ""),
+            }
+        )
+    return out
+
+
 def _recruiter_summary_markdown(row: dict[str, Any]) -> str:
     rp_raw = row.get("recruiter_page")
     rp = rp_raw if isinstance(rp_raw, dict) else {}
@@ -119,6 +154,8 @@ def _recruiter_summary_markdown(row: dict[str, Any]) -> str:
         f"## {name}",
         "",
         "### Candidate highlight (per current job description)",
+        "",
+        "_Skill dimensions with scores of 2/5 or below are omitted (same as the PDF)._",
         "",
         summary or "_No summary generated._",
         "",
@@ -252,6 +289,10 @@ def _render_last_run(last: dict[str, Any]) -> None:
         cand = str(r.get("Candidate", f"Candidate {idx + 1}"))
         with st.expander(f"{cand} - highlights & verdict", expanded=False):
             st.markdown(_recruiter_summary_markdown(r))
+            dim_ui = _dimension_rows_ui(r)
+            if dim_ui:
+                st.markdown("**Technical screening — skill dimensions (score > 2/5)**")
+                st.dataframe(pd.DataFrame(dim_ui), use_container_width=True, hide_index=True)
 
     st.subheader("Other downloads")
     csv_path = Path(last["csv_path"])
@@ -268,7 +309,15 @@ def _render_last_run(last: dict[str, Any]) -> None:
 
 
 st.set_page_config(page_title="JD-Resume Matcher", layout="wide")
-st.title("JD-Resume Matcher")
+_logo_path = _resolve_streamlit_logo()
+if _logo_path:
+    _h1, _h2 = st.columns([4, 1])
+    with _h1:
+        st.title("JD-Resume Matcher")
+    with _h2:
+        st.image(str(_logo_path), use_container_width=True)
+else:
+    st.title("JD-Resume Matcher")
 st.caption("Frontend-only mode: jobs are submitted to queue workers.")
 
 jd_input_mode = st.radio("JD input mode", ["Upload JD file", "Paste JD text"], horizontal=True, index=0)
