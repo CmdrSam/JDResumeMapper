@@ -16,6 +16,7 @@ SUMMARY_COLUMNS = [
     "Profile score",
     "Why select",
     "Why not select",
+    "Recruiter notes",
     "Skill matrix JSON",
 ]
 

@@ -42,6 +42,7 @@ _RUN_SEMAPHORE = threading.BoundedSemaphore(_MAX_CONCURRENT_SUBMITS)
 _MAX_AUTO_PDF_BYTES_PER_FILE = 12 * 1024 * 1024
 _MAX_AUTO_PDF_BYTES_TOTAL = 28 * 1024 * 1024
 _STATUS_AUTO_REFRESH_MS = 4000
+_MAX_RECRUITER_NOTES_CHARS = 8000
 
 
 def _get_session_id() -> str:
@@ -159,9 +160,12 @@ def _recruiter_summary_markdown(row: dict[str, Any]) -> str:
         "",
         summary or "_No summary generated._",
         "",
-        "### Verdict",
-        "",
     ]
+    notes = str(row.get("recruiter_notes") or "").strip()
+    if notes:
+        parts.extend(["### Recruiter notes", "", notes, ""])
+
+    parts.extend(["### Verdict", ""])
     if verdict_lines:
         for line in verdict_lines:
             parts.append(f"- {line}")
@@ -334,6 +338,23 @@ else:
 
 resume_files = st.file_uploader("Resumes (.pdf, .docx, .txt)", type=["pdf", "docx", "txt"], accept_multiple_files=True)
 
+if resume_files:
+    st.markdown("##### Recruiter notes (optional)")
+    st.caption(
+        "One box per uploaded resume. Add context for matching—e.g. updated experience, new certifications, "
+        f"visa or location, or phone-screen notes (max {_MAX_RECRUITER_NOTES_CHARS:,} characters each). "
+        "This text is sent to the worker and included in scores, CSV, and PDF."
+    )
+    for i, up in enumerate(resume_files):
+        st.text_area(
+            f"Notes for **{up.name}**",
+            placeholder="e.g. Now Staff Engineer at Acme since Jan 2025; AWS SA Pro completed.",
+            key=f"recruiter_note_{i}",
+            height=110,
+            max_chars=_MAX_RECRUITER_NOTES_CHARS,
+            label_visibility="visible",
+        )
+
 run_clicked = st.button(
     "Run match",
     type="primary",
@@ -376,7 +397,16 @@ if run_clicked:
                 h = hashlib.sha256(content).hexdigest()
                 rpath = inputs_dir / f"resume_{i}_{up.name}"
                 rpath.write_bytes(content)
-                resume_items.append({"path": str(rpath.resolve()), "display_name": up.name, "hash": h})
+                raw_note = str(st.session_state.get(f"recruiter_note_{i}", "") or "").strip()
+                note = raw_note[:_MAX_RECRUITER_NOTES_CHARS]
+                resume_items.append(
+                    {
+                        "path": str(rpath.resolve()),
+                        "display_name": up.name,
+                        "hash": h,
+                        "recruiter_notes": note,
+                    }
+                )
             payload["resume_items"] = resume_items
 
             q = get_match_queue()

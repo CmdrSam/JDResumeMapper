@@ -375,6 +375,13 @@ def _build_cover_pdf_bytes(
     story.append(Spacer(1, 0.05 * inch))
     story.extend(_summary_body_flowables(page.get("candidate_summary") or "", body))
 
+    notes = str(candidate.get("recruiter_notes") or "").strip()
+    if notes:
+        story.append(Spacer(1, 0.1 * inch))
+        story.append(Paragraph("Recruiter notes", section))
+        story.append(Spacer(1, 0.04 * inch))
+        story.extend(_summary_body_flowables(notes, body))
+
     story.append(Spacer(1, 0.1 * inch))
     story.append(Paragraph("Verdict:", section))
     story.append(Spacer(1, 0.04 * inch))
