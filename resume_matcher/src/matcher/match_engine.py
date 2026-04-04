@@ -108,6 +108,8 @@ Structured JD skills (JSON). Lists ``required_skills`` and ``optional_skills`` w
 Candidate profile (JSON):
 {candidate_block}
 
+If the profile includes non-empty "recruiter_notes", treat it as hiring-team context and use it as evidence when rating skills and writing match reasons.
+
 Produce one row per **required** JD skill (from ``required_skills`` or clearly mandatory in the JD). Also include **optional** JD skills as separate rows when they are listed in ``optional_skills`` or as nice-to-haves — use a slightly lower bar for optional items but still rate honestly.
 
 For each skill row:
@@ -202,6 +204,8 @@ Structured JD skills (JSON):
 Candidate profile (JSON):
 {cand_json}
 
+If "recruiter_notes" is present, factor it into holistic fit like verified updates from the hiring team.
+
 Per-skill assessment notes (JSON array):
 {ratings_json}
 
@@ -253,6 +257,8 @@ Structured JD skills (JSON):
 
 Candidate profile (JSON):
 {cand_json}
+
+If "recruiter_notes" is present, incorporate that context into why_select / why_not_select.
 
 Per-skill assessment (JSON array, ratings 0-10):
 {ratings_json}
@@ -405,6 +411,8 @@ Structured JD skills (JSON):
 Candidate profile (JSON):
 {cand_json}
 
+If the profile includes a non-empty "recruiter_notes" field, treat it as **trusted hiring-team context** (e.g. recent role changes, skills not on the resume); weigh it alongside the structured resume fields in summary, verdict, and dimension_rows.
+
 Per-skill LLM assessments (JSON):
 {match_json}
 
@@ -496,6 +504,8 @@ def build_candidate_jd_summary_row(
     skill_matrix = _skill_matrix_from_recruiter_page(recruiter_page)
     cand_name = str(candidate.get("name") or "").strip() or Path(resume_file_name).stem
 
+    notes = str(candidate.get("recruiter_notes") or "").strip()
+
     return {
         "JD": jd_label,
         "Candidate": cand_name,
@@ -507,6 +517,7 @@ def build_candidate_jd_summary_row(
         "Profile score": profile_score,
         "Why select": rationale["why_select"],
         "Why not select": rationale["why_not_select"],
+        "recruiter_notes": notes,
         "recruiter_page": recruiter_page,
         "skill_matrix": skill_matrix,
     }
