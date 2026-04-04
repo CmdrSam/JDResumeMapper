@@ -23,6 +23,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.platypus import HRFlowable, Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from src.parser.resume_parser import extract_text_from_resume
+from src.utils.recruiter_scores import overall_match_from_dimension_rows
 
 DEFAULT_OUTPUT_RELATIVE = Path("outputs")
 
@@ -168,7 +169,11 @@ def _recruiter_page_for_pdf(jd_rows: list[dict[str, Any]]) -> dict[str, Any]:
     rp = row.get("recruiter_page")
     if isinstance(rp, dict) and (str(rp.get("candidate_summary") or "").strip() or rp.get("dimension_rows")):
         rp_out = dict(rp)
-        rp_out["dimension_rows"] = _dimension_rows_score_gt2(rp.get("dimension_rows") or [])
+        filtered = _dimension_rows_score_gt2(rp.get("dimension_rows") or [])
+        rp_out["dimension_rows"] = filtered
+        derived = overall_match_from_dimension_rows(filtered)
+        if derived is not None:
+            rp_out["overall_match_out_of_5"], rp_out["overall_match_percent_approx"] = derived
         return rp_out
 
     profile_s = _parse_score(row.get("Profile score"))
@@ -228,13 +233,17 @@ def _recruiter_page_for_pdf(jd_rows: list[dict[str, Any]]) -> dict[str, Any]:
                 }
             )
 
-    return {
+    out = {
         "candidate_summary": summary,
         "verdict_lines": verdict,
         "overall_match_out_of_5": om,
         "overall_match_percent_approx": int(round(om / 5.0 * 100)),
         "dimension_rows": dims,
     }
+    derived = overall_match_from_dimension_rows(dims)
+    if derived is not None:
+        out["overall_match_out_of_5"], out["overall_match_percent_approx"] = derived
+    return out
 
 
 def _score_cell(score: int) -> str:
@@ -383,19 +392,7 @@ def _build_cover_pdf_bytes(
         pct_i = int(pct)
     except (TypeError, ValueError):
         pct_i = int(round(om_f / 5.0 * 100))
-    story.append(Spacer(1, 0.08 * inch))
-    story.append(
-        Paragraph(
-            f"<b>Overall Matching Score:</b> Overall Match: {om_f} / 5 (≈ {pct_i}%)",
-            body,
-        )
-    )
 
-    story.append(Spacer(1, 0.12 * inch))
-    headers = ["Skill Area", "JD Requirement", "Resume Evidence", "Score", "Match Summary"]
-    table_data: list[list[Any]] = [
-        [Paragraph(f"<b>{h.replace('&', '&amp;')}</b>", small) for h in headers]
-    ]
     dims = _sort_dimension_rows(_dimension_rows_score_gt2(page.get("dimension_rows") or []))
     if not dims:
         om_stars = max(0, min(5, int(round(om_f))))
@@ -409,6 +406,23 @@ def _build_cover_pdf_bytes(
                     "match_summary": "No individual skill rows scored above 2/5",
                 }
             ]
+    derived = overall_match_from_dimension_rows(dims)
+    if derived is not None:
+        om_f, pct_i = derived
+
+    story.append(Spacer(1, 0.08 * inch))
+    story.append(
+        Paragraph(
+            f"<b>Overall Matching Score:</b> Overall Match: {om_f} / 5 (≈ {pct_i}%)",
+            body,
+        )
+    )
+    story.append(Spacer(1, 0.12 * inch))
+
+    headers = ["Skill Area", "JD Requirement", "Resume Evidence", "Score", "Match Summary"]
+    table_data: list[list[Any]] = [
+        [Paragraph(f"<b>{h.replace('&', '&amp;')}</b>", small) for h in headers]
+    ]
     if not dims:
         table_data.append([Paragraph(_para_html("—"), small) for _ in headers])
     else:

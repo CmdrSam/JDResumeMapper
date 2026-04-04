@@ -7,6 +7,7 @@ from src.extractor.resume_extractor import candidate_profile_json, format_candid
 from src.llm.client import LLMClient
 from src.utils.json_utils import parse_llm_json
 from src.utils.normalize import normalize_token
+from src.utils.recruiter_scores import overall_match_from_dimension_rows
 
 
 def _candidate_shows_skill_evidence(candidate: dict[str, Any], jd_skill: str) -> bool:
@@ -292,17 +293,17 @@ def _normalize_recruiter_ready_page(
         verdict_lines = []
 
     try:
-        om = float(data.get("overall_match_out_of_5", profile_score / 20.0))
+        om_llm = float(data.get("overall_match_out_of_5", profile_score / 20.0))
     except (TypeError, ValueError):
-        om = profile_score / 20.0
-    om = max(0.0, min(5.0, round(om, 1)))
+        om_llm = profile_score / 20.0
+    om_llm = max(0.0, min(5.0, round(om_llm, 1)))
 
     pctx = data.get("overall_match_percent_approx")
     try:
-        pct = int(round(float(pctx)))
+        pct_llm = int(round(float(pctx)))
     except (TypeError, ValueError):
-        pct = int(round(om / 5.0 * 100))
-    pct = max(0, min(100, pct))
+        pct_llm = int(round(om_llm / 5.0 * 100))
+    pct_llm = max(0, min(100, pct_llm))
 
     raw_rows = data.get("dimension_rows") or data.get("dimensions") or []
     dim_out: list[dict[str, Any]] = []
@@ -356,6 +357,11 @@ def _normalize_recruiter_ready_page(
                     "match_summary": "See summary above",
                 }
             )
+
+    om, pct = om_llm, pct_llm
+    derived = overall_match_from_dimension_rows(dim_out)
+    if derived is not None:
+        om, pct = derived
 
     return {
         "candidate_summary": summary,
@@ -414,9 +420,9 @@ Return a single JSON object only (no markdown) with exactly these keys:
 
 2) "verdict_lines" — JSON array of **2 to 3** short strings: hiring recommendation lines (fit level, shortlist guidance). No leading bullets inside each string.
 
-3) "overall_match_out_of_5" — number from 0 to 5 (one decimal allowed, e.g. 4.2), consistent with holistic fit and the table below.
+3) "overall_match_out_of_5" — number from 0 to 5 (one decimal allowed); used only if no dimension rows remain after filtering — otherwise the app recomputes it as the **mean** of kept dimension scores.
 
-4) "overall_match_percent_approx" — integer 0-100, roughly (overall_match_out_of_5 / 5) * 100.
+4) "overall_match_percent_approx" — integer 0-100; same fallback rule as (3).
 
 5) "dimension_rows" — array of **12 to 18** objects, each with exactly:
    - "skill_area": short label (e.g. Experience, Location, and JD-specific themes like SRE Concepts, Cloud, Kubernetes, Observability).
